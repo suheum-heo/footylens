@@ -1,71 +1,91 @@
-# Madison Public Data Analysis — Claude Instructions
+# FootyLens — Claude Instructions
+
+## Project Context
+- **Goal**: Football match analysis platform — collect, process, and visualize soccer data
+- **Stack**: FastAPI (data ingestion/analytics) + Django + DRF (main app/admin) + PostgreSQL + Redis
+- **Data Sources**: Football-Data.org, StatsBomb open data, FotMob (optional)
+- **Frontend**: Next.js dashboard (Phase 4)
+- **Infra**: Docker Compose locally, Railway/Render for deployment
+- **Venv**: `source .venv/bin/activate`
+- **Timeline**:
+  - Phase 1 (2w): FastAPI data collection service
+  - Phase 2 (3w): Django main app + DRF + Admin
+  - Phase 3 (2w): Analytics layer (xG, pass networks, heatmaps)
+  - Phase 4 (1w): Next.js dashboard + Docker + deploy
+
+---
 
 ## Workflow Orchestration
 
 ### 1. Plan Mode Default
 - Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions)
-- If something goes sideways, STOP and re-plan immediately
+- Write specs upfront — endpoint contracts, DB schema, data flow diagrams in comments
+- If something breaks or drifts from architecture, STOP and re-plan before proceeding
 - Use plan mode for verification steps, not just building
-- Write detailed specs upfront to reduce ambiguity
 
-### 2. Subagent Strategy
-- Use subagents liberally to keep main context window clean
-- Offload data exploration, EDA, and parallel analysis to subagents
-- For complex problems, throw more compute at it via subagents
-- One task per subagent for focused execution
+### 2. Architecture Discipline
+- FastAPI = async data ingestion, scheduling, analytics endpoints only
+- Django = ORM, admin, auth, REST via DRF — no business logic duplication
+- Never blur the service boundary without a clear reason and explicit plan update
+- If a feature could live in either service, default to Django unless async/performance is the reason
 
 ### 3. Self-Improvement Loop
-- After ANY correction from the user: update `tasks/lessons.md` with the pattern
+- After ANY correction: update `tasks/lessons.md` with the pattern
 - Write rules that prevent the same mistake from recurring
-- Ruthlessly iterate on these lessons until mistake rate drops
 - Review lessons at session start for relevant context
 
 ### 4. Verification Before Done
 - Never mark a task complete without proving it works
-- Validate query results against raw data when relevant
-- Ask yourself: "Would a data analyst at the City of Madison approve this?"
-- Run queries, check row counts, demonstrate correctness
+- Validate API responses against raw source data when relevant
+- Ask: "Would a backend engineer at StatsBomb or Opta approve this?"
+- Run the server, hit the endpoint, confirm the response — then mark done
 
 ### 5. Demand Elegance (Balanced)
-- For non-trivial queries or transforms: pause and ask "is there a more elegant way?"
-- If a solution feels hacky: "Knowing everything I know now, implement the elegant solution"
-- Skip this for simple, obvious fixes — don't over-engineer
-- Challenge your own work before presenting it
+- For non-trivial endpoints or data transforms: pause and ask "is there a more elegant way?"
+- If a solution feels hacky: implement the clean version from the start
+- Skip for simple obvious fixes — don't over-engineer
+- Pydantic models and Django serializers should be tight, not permissive
 
 ### 6. Autonomous Bug Fixing
-- When given a data issue or broken query: just fix it. Don't ask for hand-holding
-- Point at schema mismatches, null handling, type errors — then resolve them
-- Zero context switching required from the user
-- Go fix failing data validations without being told how
+- When given a broken endpoint or data issue: diagnose and fix. Don't ask for hand-holding
+- Point at schema mismatches, type errors, null handling — then resolve
+- For Django ORM issues: check migrations before assuming logic bugs
+- For FastAPI async issues: check event loop, dependency injection chain first
+
+---
 
 ## Task Management
 
 1. **Plan First** — Write plan to `tasks/todo.md` with checkable items
 2. **Verify Plan** — Check in before starting implementation
 3. **Track Progress** — Mark items complete as you go
-4. **Explain Changes** — High-level summary at each step
-5. **Document Results** — Add review section to `tasks/todo.md`
+4. **Explain Changes** — High-level summary of what changed and why at each step
+5. **Document Results** — Add review/notes section to `tasks/todo.md` after each phase
 6. **Capture Lessons** — Update `tasks/lessons.md` after any correction
+
+---
 
 ## Core Principles
 
-- **Simplicity First** — Make every query and transform as simple as possible
-- **No Laziness** — Find root causes in data quality issues. No band-aid fixes. Senior analyst standards
-- **Minimal Impact** — Changes should only touch what's necessary. Avoid introducing pipeline bugs
+- **Service Boundary First** — Always ask which service owns this feature before writing code
+- **No Laziness** — Find root causes in data quality and API issues. No band-aid fixes
+- **Minimal Impact** — Changes should only touch what's necessary. Avoid cross-service side effects
+- **Data Integrity** — Validate incoming data at the FastAPI boundary with Pydantic. Trust nothing from external APIs
+- **Migrations are Sacred** — Never edit a migration file after it's been applied. Make a new one
 
-## Project Context
-- Goal: Madison public data analysis — collect, explore, surface insights, visualize
-- Data Sources: City of Madison Open Data Portal (data.cityofmadison.com), data.gov
-- Stack: Python, PostgreSQL, pandas, psycopg2/SQLAlchemy, matplotlib/seaborn/plotly
-- DB: madison_analysis (PostgreSQL)
-- Venv: source .venv/bin/activate
-- Timeline:
-  - Week 1–2: Data collection & SQL EDA
-  - Week 3: Insight extraction & visualization
-  - Week 4: Report / dashboard polish
+---
 
 ## Git Workflow
-- Commit after each meaningful milestone (schema created, data loaded, EDA complete, viz added, etc.)
-- Commit message format: `feat: load permits dataset` / `fix: null handling in date column`
-- Never commit broken code — verify first, then commit
+- Commit after each meaningful milestone (schema created, endpoint live, EDA complete, etc.)
+- Commit message format: `feat: add /matches endpoint` / `fix: null handling in kickoff_time` / `chore: add redis caching to standings`
+- Never commit broken code — run the server and verify first
 - Always `git push` after committing
+- Branch per phase: `phase-1-fastapi`, `phase-2-django`, etc. Merge to `main` at phase completion
+
+---
+
+## Key Reminders
+- Football-Data.org free tier: 10 calls/min — always add rate limiting in the scheduler
+- StatsBomb open data is file-based (JSON) — batch load, don't poll
+- Redis cache TTL: 1hr for standings/fixtures, 24hr for historical match stats
+- Django Admin customization is a deliverable — not an afterthought

@@ -20,6 +20,10 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
 
+# ─── Football-Data.org ─────────────────────────────────────────────────────
+FOOTBALL_DATA_API_KEY = env("FOOTBALL_DATA_API_KEY")
+FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4"
+
 # ─── Applications ──────────────────────────────────────────────────────────
 INSTALLED_APPS = [
     "django.contrib.admin",

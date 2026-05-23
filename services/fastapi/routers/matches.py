@@ -57,7 +57,7 @@ async def get_matches(
     cache = get_cache()
     cache_key = _build_cache_key(competition, matchday, status)
 
-    # Try to get from cache first
+    # Try cache first
     cached_raw = cache.get(cache_key)
     if cached_raw is not None:
         logger.info(f"Serving matches from cache: {cache_key}")
@@ -83,9 +83,12 @@ async def get_matches(
             logger.error(f"Cache validation failed: {e}, fetching fresh")
             cache.clear(cache_key)
 
-    # Cache miss or invalid, fetch fresh from API
+    # Cache miss or invalid, fetch fresh from API.
+    # Use the competition-specific endpoint (/competitions/{code}/matches) rather
+    # than the global /matches endpoint — the global endpoint applies a rolling
+    # date window that silently drops TIMED/SCHEDULED fixtures beyond ~2 days.
     try:
-        raw_response = await client.get_matches(
+        raw_response = await client.get_competition_matches(
             competition=competition,
             matchday=matchday,
             status=status,

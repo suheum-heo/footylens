@@ -176,11 +176,62 @@ class RateLimitedClient:
     ) -> Dict[str, Any]:
         """
         Get all teams in a competition.
-        
+
         Args:
             competition: Competition code (e.g., "PL", "BL1", "SA", "PD", "FL1")
-        
+
         Returns:
             Teams data from API
         """
         return await self.get(f"/competitions/{competition}/teams")
+
+    async def get_competition_matches(
+        self,
+        competition: str,
+        matchday: Optional[int] = None,
+        status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Get matches via the competition-specific endpoint.
+
+        Unlike get_matches() (which defaults to today's date window),
+        this returns ALL matches for the current season and is the correct
+        endpoint for analytics that need full-season match history.
+
+        Args:
+            competition: Competition code (e.g., "PL")
+            matchday: Specific matchday (optional)
+            status: Filter by status e.g. "FINISHED" (optional)
+
+        Returns:
+            Matches data from API
+        """
+        params: Dict[str, Any] = {}
+        if matchday is not None:
+            params["matchday"] = matchday
+        if status:
+            params["status"] = status
+        return await self.get(
+            f"/competitions/{competition}/matches",
+            params=params if params else None,
+        )
+
+    async def get_scorers(
+        self,
+        competition: str,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Get top scorers for a competition.
+
+        Args:
+            competition: Competition code (e.g., "PL")
+            limit: Max scorers to return (free tier may cap at 10)
+
+        Returns:
+            Scorers data from API
+        """
+        return await self.get(
+            f"/competitions/{competition}/scorers",
+            params={"limit": limit},
+        )

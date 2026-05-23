@@ -7,7 +7,7 @@ import asyncio
 from fastapi import FastAPI
 from datetime import datetime
 from schemas.responses import HealthCheckResponse
-from routers import matches, standings, teams, cache_status
+from routers import matches, standings, teams, cache_status, analytics
 from services.scheduler import SchedulerService, set_scheduler
 from services.football_data_client import RateLimitedClient
 from core.config import get_settings
@@ -25,6 +25,7 @@ app = FastAPI(
 app.include_router(matches.router)
 app.include_router(standings.router)
 app.include_router(teams.router)
+app.include_router(analytics.router)
 app.include_router(cache_status.router)
 
 # Global references for lifecycle management

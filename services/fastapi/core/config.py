@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = str(env_file)
         case_sensitive = False
+        extra = "ignore"  # ignore Django/DB/Redis vars in the shared .env
 
 
 def get_settings() -> Settings:

@@ -7,6 +7,96 @@ from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 
 
+# ─── Analytics schemas ────────────────────────────────────────────────────────
+
+class XGMatchEntry(BaseModel):
+    """Per-match xG proxy entry."""
+
+    match_id: int
+    matchday: Optional[int] = None
+    utc_date: Optional[str] = None
+    status: Optional[str] = None
+    home_team_id: Optional[int] = None
+    home_team_name: str
+    away_team_id: Optional[int] = None
+    away_team_name: str
+    home_xg: float
+    away_xg: float
+    home_goals: Optional[int] = None
+    away_goals: Optional[int] = None
+
+    class Config:
+        populate_by_name = True
+
+
+class XGResponse(BaseModel):
+    """Response for GET /api/analytics/xg."""
+
+    competition: str
+    matchday: int
+    method: str = "poisson_strength_proxy"
+    note: str = (
+        "xG estimated from season attack/defence indices. "
+        "Not based on shot data (unavailable on free tier)."
+    )
+    matches: List[XGMatchEntry]
+
+    class Config:
+        populate_by_name = True
+
+
+class FormEntry(BaseModel):
+    """Per-team form entry."""
+
+    team_id: int
+    team_name: str
+    form: str            # e.g. "WWDLW" — most recent last
+    form_points: int
+    matches_considered: int
+
+    class Config:
+        populate_by_name = True
+
+
+class FormResponse(BaseModel):
+    """Response for GET /api/analytics/standings-form."""
+
+    competition: str
+    last_n: int
+    teams: List[FormEntry]
+
+    class Config:
+        populate_by_name = True
+
+
+class ScorerEntry(BaseModel):
+    """Individual scorer entry."""
+
+    rank: int
+    player_id: Optional[int] = None
+    player_name: str
+    team_id: Optional[int] = None
+    team_name: str
+    goals: int
+    assists: Optional[int] = None
+    penalties: Optional[int] = None
+    played_matches: int
+    goals_per_game: float
+
+    class Config:
+        populate_by_name = True
+
+
+class TopScorersResponse(BaseModel):
+    """Response for GET /api/analytics/top-scorers."""
+
+    competition: str
+    scorers: List[ScorerEntry]
+
+    class Config:
+        populate_by_name = True
+
+
 class ErrorResponse(BaseModel):
     """Error response schema."""
 

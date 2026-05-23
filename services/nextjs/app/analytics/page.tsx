@@ -10,6 +10,8 @@
  *   Width is proportional to xG relative to max(xG) in the dataset.
  */
 
+export const dynamic = "force-dynamic";
+
 import { getXG, getTopScorers } from "@/lib/api";
 
 const XG_MATCHDAY = 38;

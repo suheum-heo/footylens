@@ -1,11 +1,16 @@
 /**
  * /matches — Premier League fixtures and results.
  *
- * Fetches the default window (today ± ~1 week) from FastAPI.
- * Groups matches by matchday. Shows score for FINISHED, "vs" for scheduled.
+ * Data strategy:
+ *   1. Fetch default window (today ± ~1 week).
+ *   2. If empty (off-season / international break), fall back to all FINISHED
+ *      matches and show only the most recently completed matchday.
  */
 
+export const dynamic = "force-dynamic";
+
 import { getMatches } from "@/lib/api";
+import type { Match } from "@/types/api";
 
 const STATUS_LABEL: Record<string, string> = {
   FINISHED: "FT",
@@ -29,38 +34,73 @@ function formatDate(utcDate: string): string {
   });
 }
 
-export default async function MatchesPage() {
-  const data = await getMatches("PL");
+function groupByMatchday(matches: Match[]): Map<number, Match[]> {
+  const map = new Map<number, Match[]>();
+  for (const m of matches) {
+    const md = m.matchday ?? 0;
+    if (!map.has(md)) map.set(md, []);
+    map.get(md)!.push(m);
+  }
+  return map;
+}
 
-  if (!data || data.matches.length === 0) {
+export default async function MatchesPage() {
+  // 1. Try the default window (full season from competition endpoint).
+  // 2. If empty, try the most recent finished matchday.
+  // 3. If still empty, try upcoming (TIMED / SCHEDULED) fixtures.
+  const windowData = await getMatches("PL");
+  const hasWindow = (windowData?.matches.length ?? 0) > 0;
+
+  let fallback: Awaited<ReturnType<typeof getMatches>> = null;
+  if (!hasWindow) {
+    fallback = await getMatches("PL", undefined, "FINISHED");
+    if ((fallback?.matches.length ?? 0) === 0) {
+      fallback = await getMatches("PL", undefined, "TIMED");
+    }
+    if ((fallback?.matches.length ?? 0) === 0) {
+      fallback = await getMatches("PL", undefined, "SCHEDULED");
+    }
+  }
+
+  const matches = hasWindow ? windowData!.matches : fallback?.matches ?? [];
+
+  // Fallback: keep only the highest matchday so we don't dump the full season.
+  const isFallback = !hasWindow && matches.length > 0;
+  const displayMatches = isFallback
+    ? (() => {
+        const maxMd = Math.max(...matches.map((m) => m.matchday ?? 0));
+        return matches.filter((m) => (m.matchday ?? 0) === maxMd);
+      })()
+    : matches;
+
+  const byMatchday = groupByMatchday(displayMatches);
+  // Most recent matchday first.
+  const matchdays = Array.from(byMatchday.keys()).sort((a, b) => b - a);
+
+  if (displayMatches.length === 0) {
     return (
       <div>
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-white">Matches</h1>
         </div>
         <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-6 py-12 text-center text-zinc-500">
-          No matches in the current window. Make sure the FastAPI service is
-          running.
+          No match data available. Make sure the FastAPI service is running.
         </div>
       </div>
     );
   }
-
-  // Group by matchday
-  const byMatchday = new Map<number, typeof data.matches>();
-  for (const match of data.matches) {
-    const md = match.matchday ?? 0;
-    if (!byMatchday.has(md)) byMatchday.set(md, []);
-    byMatchday.get(md)!.push(match);
-  }
-  const matchdays = Array.from(byMatchday.keys()).sort((a, b) => a - b);
 
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-white">Matches</h1>
         <p className="text-sm text-zinc-400 mt-1">
-          Premier League · {data.count} fixture{data.count !== 1 ? "s" : ""}
+          Premier League
+          {isFallback && (
+            <span className="ml-2 text-zinc-600">
+              · matchday {matchdays[0]}
+            </span>
+          )}
         </p>
       </div>
 
@@ -109,9 +149,7 @@ export default async function MatchesPage() {
 
                     {/* Score / status */}
                     <div className="flex w-20 shrink-0 items-center justify-center gap-1 text-center">
-                      {finished &&
-                      homeGoals != null &&
-                      awayGoals != null ? (
+                      {finished && homeGoals != null && awayGoals != null ? (
                         <>
                           <span className="w-5 text-right font-bold tabular-nums text-white">
                             {homeGoals}

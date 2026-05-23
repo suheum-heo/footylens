@@ -6,6 +6,8 @@
  *   getForm(PL, 5)   → form string per team (matched by team_id)
  */
 
+export const dynamic = "force-dynamic";
+
 import { getStandings, getForm } from "@/lib/api";
 import FormBadge from "@/components/FormBadge";
 

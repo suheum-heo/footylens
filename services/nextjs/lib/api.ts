@@ -17,10 +17,9 @@ const BASE_URL = process.env.FASTAPI_URL ?? "http://localhost:8000";
 const REVALIDATE = 3600; // 1 hour
 
 async function apiFetch<T>(path: string): Promise<T | null> {
+  const url = `${BASE_URL}${path}`;
   try {
-    const res = await fetch(`${BASE_URL}${path}`, {
-      next: { revalidate: REVALIDATE },
-    });
+    const res = await fetch(url, { next: { revalidate: REVALIDATE } });
     if (!res.ok) return null;
     return res.json() as Promise<T>;
   } catch {
@@ -34,10 +33,12 @@ export function getStandings(competition = "PL"): Promise<StandingsResponse | nu
 
 export function getMatches(
   competition = "PL",
-  matchday?: number
+  matchday?: number,
+  status?: string
 ): Promise<MatchesResponse | null> {
   const params = new URLSearchParams({ competition });
   if (matchday != null) params.set("matchday", String(matchday));
+  if (status != null) params.set("status", status);
   return apiFetch<MatchesResponse>(`/api/matches?${params}`);
 }
 

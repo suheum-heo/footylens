@@ -9,6 +9,7 @@ from typing import Optional
 from logging import getLogger
 
 from core.config import Settings, get_settings
+from core.cache import get_cache
 from services.football_data_client import RateLimitedClient
 from models.football_data import StandingsResponse as StandingsModel
 from schemas.responses import StandingsResponse, TeamStandingResponse, ErrorResponse
@@ -33,6 +34,11 @@ async def get_client(settings: Settings = Depends(get_settings)) -> RateLimitedC
     return _client
 
 
+def _build_cache_key(competition: str) -> str:
+    """Build cache key from parameters."""
+    return f"standings:{competition}"
+
+
 @router.get(
     "/standings",
     response_model=StandingsResponse,
@@ -49,29 +55,79 @@ async def get_standings(
     - `competition`: Competition code (e.g., "PL" for Premier League)
     
     **Returns:** League table with team positions, points, and record
+    
+    **Caching:** Results are cached for 1 hour and served from cache on subsequent requests.
     """
+    cache = get_cache()
+    cache_key = _build_cache_key(competition)
+
+    # Try to get from cache first
+    cached_raw = cache.get(cache_key)
+    if cached_raw is not None:
+        logger.info(f"Serving standings from cache: {cache_key}")
+        try:
+            validated = StandingsModel(**cached_raw)
+            standings = []
+            if validated.standings:
+                table = validated.standings[0].standings
+                for entry in table:
+                    standings.append(
+                        TeamStandingResponse(
+                            position=entry.position,
+                            team_name=entry.team.name,
+                            team_id=entry.team.id,
+                            played_games=entry.played_games,
+                            wins=entry.wins,
+                            draws=entry.draws,
+                            losses=entry.losses,
+                            points=entry.points,
+                            goal_difference=entry.goal_difference,
+                        )
+                    )
+            return StandingsResponse(competition=competition, standings=standings)
+        except Exception as e:
+            logger.error(f"Cache validation failed: {e}, fetching fresh")
+            cache.clear(cache_key)
+
+    # Cache miss or invalid, fetch fresh from API
     try:
         raw_response = await client.get_standings(competition=competition)
-        validated = StandingsModel(**raw_response)
+        
+        # Validate basic structure
+        if not raw_response or "standings" not in raw_response:
+            raise ValueError("Invalid standings response structure")
+        
+        standings_list = raw_response.get("standings", [])
+        if not standings_list or not isinstance(standings_list, list) or len(standings_list) == 0:
+            logger.warning(f"No standings data for {competition}")
+            return StandingsResponse(competition=competition, standings=[])
 
-        # Transform to response schema (use first standings table, usually overall)
+        # Extract first standings table (usually overall)
+        standings_data = standings_list[0]
+        if "table" not in standings_data or not standings_data["table"]:
+            logger.warning(f"No table in standings data for {competition}")
+            return StandingsResponse(competition=competition, standings=[])
+
+        # Update cache
+        cache.set(cache_key, raw_response, ttl_minutes=60)
+        logger.info(f"Cached standings: {cache_key}")
+
+        # Transform table to response schema
         standings = []
-        if validated.standings:
-            table = validated.standings[0].standings
-            for entry in table:
-                standings.append(
-                    TeamStandingResponse(
-                        position=entry.position,
-                        team_name=entry.team.name,
-                        team_id=entry.team.id,
-                        played_games=entry.played_games,
-                        wins=entry.wins,
-                        draws=entry.draws,
-                        losses=entry.losses,
-                        points=entry.points,
-                        goal_difference=entry.goal_difference,
-                    )
+        for entry in standings_data["table"]:
+            standings.append(
+                TeamStandingResponse(
+                    position=entry.get("position", 0),
+                    team_name=entry.get("team", {}).get("name", "Unknown"),
+                    team_id=entry.get("team", {}).get("id", 0),
+                    played_games=entry.get("playedGames", 0),
+                    wins=entry.get("won", 0),
+                    draws=entry.get("draw", 0),
+                    losses=entry.get("lost", 0),
+                    points=entry.get("points", 0),
+                    goal_difference=entry.get("goalDifference", 0),
                 )
+            )
 
         return StandingsResponse(competition=competition, standings=standings)
 

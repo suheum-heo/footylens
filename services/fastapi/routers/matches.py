@@ -9,6 +9,7 @@ from typing import Optional
 from logging import getLogger
 
 from core.config import Settings, get_settings
+from core.cache import get_cache
 from services.football_data_client import RateLimitedClient
 from models.football_data import MatchesResponse
 from schemas.responses import MatchesListResponse, MatchResponse, ErrorResponse
@@ -31,6 +32,16 @@ async def get_client(settings: Settings = Depends(get_settings)) -> RateLimitedC
             rate_limit_period_seconds=settings.rate_limit_period_seconds,
         )
     return _client
+
+
+def _build_cache_key(competition: str, matchday: Optional[int], status: Optional[str]) -> str:
+    """Build cache key from parameters."""
+    parts = [f"matches:{competition}"]
+    if matchday:
+        parts.append(f"m{matchday}")
+    if status:
+        parts.append(f"s{status}")
+    return ":".join(parts)
 
 
 @router.get(
@@ -56,7 +67,39 @@ async def get_matches(
     - `status`: Optional filter by match status
     
     **Returns:** List of matches with basic info (teams, scores, status)
+    
+    **Caching:** Results are cached for 1 hour and served from cache on subsequent requests.
     """
+    cache = get_cache()
+    cache_key = _build_cache_key(competition, matchday, status)
+
+    # Try to get from cache first
+    cached_raw = cache.get(cache_key)
+    if cached_raw is not None:
+        logger.info(f"Serving matches from cache: {cache_key}")
+        try:
+            validated = MatchesResponse(**cached_raw)
+            matches = []
+            for match in validated.matches:
+                matches.append(
+                    MatchResponse(
+                        id=match.id,
+                        utc_date=match.utc_date.isoformat(),
+                        status=match.status,
+                        matchday=match.matchday,
+                        home_team_name=match.home_team.name,
+                        home_team_id=match.home_team.id,
+                        away_team_name=match.away_team.name,
+                        away_team_id=match.away_team.id,
+                        score=match.score,
+                    )
+                )
+            return MatchesListResponse(count=len(matches), matches=matches)
+        except Exception as e:
+            logger.error(f"Cache validation failed: {e}, fetching fresh")
+            cache.clear(cache_key)
+
+    # Cache miss or invalid, fetch fresh from API
     try:
         raw_response = await client.get_matches(
             competition=competition,
@@ -64,6 +107,10 @@ async def get_matches(
             status=status,
         )
         validated = MatchesResponse(**raw_response)
+
+        # Update cache
+        cache.set(cache_key, raw_response, ttl_minutes=60)
+        logger.info(f"Cached matches: {cache_key}")
 
         # Transform to response schema
         matches = []

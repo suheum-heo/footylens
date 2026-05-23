@@ -52,9 +52,18 @@ Browser → Next.js (3000) → FastAPI (8000) → Football-Data.org
 - [x] Health checks on all services
 
 ### 6. Verify
-- [ ] `docker compose up --build` → all services healthy
-- [ ] GET localhost:3000 → standings table renders
-- [ ] GET localhost:3000/analytics → xG chart + scorers
+- [x] `docker compose up --build` → all services healthy
+- [x] GET localhost:3000 → standings table renders
+- [x] GET localhost:3000/analytics → xG chart + scorers
 
 ### 7. Commit
-- [ ] `feat: add Next.js dashboard and Docker Compose`
+- [x] `feat: add Next.js dashboard and Docker Compose`
+
+---
+
+## Post-phase fixes (Docker debugging)
+- [x] Replace curl healthchecks with python urllib / wget (curl not in slim images)
+- [x] Add httpx to django requirements (needed by sync_football_data)
+- [x] Switch matches router to competition endpoint (global /matches has date window)
+- [x] Add force-dynamic to all pages (static prerender baked in empty data at build time)
+- [x] Matches fallback: FINISHED → TIMED → SCHEDULED for end-of-season

@@ -8,30 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from logging import getLogger
 
-from core.config import Settings, get_settings
 from core.cache import get_cache
+from services.client_factory import get_client
 from services.football_data_client import RateLimitedClient
 from models.football_data import TeamsResponse as TeamsModel
 from schemas.responses import TeamsListResponse, TeamResponse, ErrorResponse
 
 logger = getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["teams"])
-
-# Lazy client initialization
-_client: Optional[RateLimitedClient] = None
-
-
-async def get_client(settings: Settings = Depends(get_settings)) -> RateLimitedClient:
-    """Get or create rate-limited API client."""
-    global _client
-    if _client is None:
-        _client = RateLimitedClient(
-            api_key=settings.football_data_api_key,
-            base_url=settings.football_data_base_url,
-            rate_limit_requests=settings.rate_limit_requests,
-            rate_limit_period_seconds=settings.rate_limit_period_seconds,
-        )
-    return _client
 
 
 def _build_cache_key(competition: str) -> str:

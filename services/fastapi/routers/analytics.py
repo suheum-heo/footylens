@@ -22,11 +22,10 @@ Data flow for each endpoint:
 import asyncio
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional
 from logging import getLogger
 
-from core.config import Settings, get_settings
 from core.cache import get_cache
+from services.client_factory import get_client
 from services.football_data_client import RateLimitedClient
 from services.analytics_engine import compute_xg_proxy, compute_form, compute_top_scorers
 from schemas.responses import (
@@ -40,21 +39,6 @@ logger = getLogger(__name__)
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 _ANALYTICS_TTL = 24 * 60  # 24 hours in minutes
-
-# Lazy client (same pattern as other routers)
-_client: Optional[RateLimitedClient] = None
-
-
-async def get_client(settings: Settings = Depends(get_settings)) -> RateLimitedClient:
-    global _client
-    if _client is None:
-        _client = RateLimitedClient(
-            api_key=settings.football_data_api_key,
-            base_url=settings.football_data_base_url,
-            rate_limit_requests=settings.rate_limit_requests,
-            rate_limit_period_seconds=settings.rate_limit_period_seconds,
-        )
-    return _client
 
 
 # ─── xG endpoint ──────────────────────────────────────────────────────────────
@@ -89,37 +73,30 @@ async def get_xg(
         return XGResponse(**cached)
 
     try:
-        # Fetch standings + matchday matches concurrently (both may already be cached)
+        # standings:{comp} is shared with the standings router — cache hit is likely.
         standings_key = f"standings:{competition.upper()}"
         matches_key = f"analytics:raw_matches:{competition.upper()}:{matchday}"
 
-        # Check nested caches for raw data first
         raw_standings = cache.get(standings_key)
         raw_matches_data = cache.get(matches_key)
 
-        async def _fetch_standings():
-            return await client.get_standings(competition=competition)
-
-        async def _fetch_matches():
-            return await client.get_competition_matches(
-                competition=competition, matchday=matchday
-            )
-
-        # Only call API for what's not cached
         if raw_standings is None and raw_matches_data is None:
             raw_standings, raw_matches_data = await asyncio.gather(
-                _fetch_standings(), _fetch_matches()
+                client.get_standings(competition=competition),
+                client.get_competition_matches(competition=competition, matchday=matchday),
             )
             cache.set(standings_key, raw_standings, ttl_minutes=60)
             cache.set(matches_key, raw_matches_data, ttl_minutes=60)
         elif raw_standings is None:
-            raw_standings = await _fetch_standings()
+            raw_standings = await client.get_standings(competition=competition)
             cache.set(standings_key, raw_standings, ttl_minutes=60)
         elif raw_matches_data is None:
-            raw_matches_data = await _fetch_matches()
+            raw_matches_data = await client.get_competition_matches(
+                competition=competition, matchday=matchday
+            )
             cache.set(matches_key, raw_matches_data, ttl_minutes=60)
 
-        # Extract standings table (TOTAL)
+        standings_list = raw_standings.get("standings", [])
         standings_list = raw_standings.get("standings", [])
         total_table = next(
             (s["table"] for s in standings_list if s.get("type") == "TOTAL"),

@@ -173,14 +173,13 @@ def _upsert_squad(team: Team, squad: list[dict]) -> None:
     Deletes players no longer in the squad; upserts those present.
     """
     incoming_ids = set()
+    valid_positions = {c[0] for c in Player.Position.choices}
     for p in squad:
         player_id = p.get("id")
         if not player_id:
             continue
 
-        # Normalise position — API may return values not in our choices
         raw_pos = p.get("position") or ""
-        valid_positions = {c[0] for c in Player.Position.choices}
         position = raw_pos if raw_pos in valid_positions else ""
 
         Player.objects.update_or_create(
@@ -220,12 +219,11 @@ def sync_standings(
     season_start = _parse_date(season.get("startDate"))
     season_end = _parse_date(season.get("endDate"))
 
+    valid_types = {c[0] for c in Standing.TableType.choices}
     for table_data in data.get("standings", []):
         table_type = table_data.get("type", "TOTAL").upper()
         stage = table_data.get("stage") or ""
 
-        # Validate type is one of our choices; fall back to TOTAL
-        valid_types = {c[0] for c in Standing.TableType.choices}
         if table_type not in valid_types:
             logger.warning(f"  Unknown standings type '{table_type}', skipping")
             continue
@@ -245,6 +243,14 @@ def sync_standings(
         rows = table_data.get("table", [])
         incoming_team_ids = set()
 
+        # Bulk-fetch all teams referenced in this table to avoid N+1 queries.
+        row_team_ids = {
+            row["team"]["id"]
+            for row in rows
+            if row.get("team", {}).get("id")
+        }
+        teams_map = {t.id: t for t in Team.objects.filter(id__in=row_team_ids)}
+
         with transaction.atomic():
             for row in rows:
                 team_data = row.get("team", {})
@@ -252,9 +258,8 @@ def sync_standings(
                 if not team_id:
                     continue
 
-                try:
-                    team = Team.objects.get(id=team_id)
-                except Team.DoesNotExist:
+                team = teams_map.get(team_id)
+                if team is None:
                     logger.warning(
                         f"    Team id={team_id} not in DB; run teams sync first. Skipping."
                     )
@@ -294,14 +299,12 @@ def sync_matches(
     client: FootballDataClient,
     competition: Competition,
     matchday: Optional[int] = None,
-    full_season: bool = False,
 ) -> int:
     """
     Fetch /competitions/{code}/matches and upsert Match rows.
 
     - No filter  → API default (returns today's window; typically last+next week)
     - matchday=N → only that matchday
-    - full_season → entire current season (no matchday filter, season param implicit)
 
     Returns count of upserted matches.
     """
@@ -309,27 +312,30 @@ def sync_matches(
     if matchday is not None:
         params["matchday"] = matchday
         logger.info(f"  Fetching matches for matchday {matchday}…")
-    elif full_season:
-        # Omit filters — API returns all matches for the current season
-        logger.info("  Fetching full season matches…")
     else:
         logger.info("  Fetching default window matches…")
 
     data = client.get(f"/competitions/{competition.code}/matches", params=params or None)
     raw_matches = data.get("matches", [])
 
+    # Bulk-fetch all teams referenced in these matches to avoid N+1 queries.
+    team_ids = {
+        tid
+        for m in raw_matches
+        for tid in (m.get("homeTeam", {}).get("id"), m.get("awayTeam", {}).get("id"))
+        if tid
+    }
+    teams_map = {t.id: t for t in Team.objects.filter(id__in=team_ids)}
+
     valid_statuses = {s[0] for s in Match.Status.choices}
     upserted = 0
 
     for m in raw_matches:
-        home_data = m.get("homeTeam", {})
-        away_data = m.get("awayTeam", {})
-        home_id = home_data.get("id")
-        away_id = away_data.get("id")
+        home_id = m.get("homeTeam", {}).get("id")
+        away_id = m.get("awayTeam", {}).get("id")
 
-        # Resolve team FKs — teams must be synced first
-        home_team = Team.objects.filter(id=home_id).first() if home_id else None
-        away_team = Team.objects.filter(id=away_id).first() if away_id else None
+        home_team = teams_map.get(home_id) if home_id else None
+        away_team = teams_map.get(away_id) if away_id else None
 
         score = m.get("score", {})
         ft = score.get("fullTime", {}) or {}
@@ -392,10 +398,7 @@ class Command(BaseCommand):
             "--full",
             action="store_true",
             default=False,
-            help=(
-                "Sync the full season: all matches + player squad data. "
-                "Makes more API calls — use once, not in a tight loop."
-            ),
+            help="Sync the full season: all matches + player squad data.",
         )
 
     def handle(self, *args, **options) -> None:
@@ -410,7 +413,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING(
             f"\n⚽  FootyLens sync — competition={code}"
             + (f"  matchday={matchday}" if matchday else "")
-            + ("  [full season]" if full else "")
+            + ("  [+squad]" if full else "")
         ))
 
         # ── 1. Competition ───────────────────────────────────────────────────
@@ -441,7 +444,6 @@ class Command(BaseCommand):
             client,
             competition,
             matchday=matchday,
-            full_season=full,
         )
         self.stdout.write(self.style.SUCCESS(f"  ✓ {count} matches synced"))
 

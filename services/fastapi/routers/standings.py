@@ -69,7 +69,7 @@ async def get_standings(
             validated = StandingsModel(**cached_raw)
             standings = []
             if validated.standings:
-                table = validated.standings[0].standings
+                table = validated.standings[0].table
                 for entry in table:
                     standings.append(
                         TeamStandingResponse(

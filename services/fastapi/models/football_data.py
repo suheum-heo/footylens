@@ -3,7 +3,7 @@ Data models for Football-Data.org API responses.
 Used for validation at the service boundary.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 
@@ -16,7 +16,7 @@ class TeamData(BaseModel):
     short_name: Optional[str] = Field(None, alias="shortName")
     tla: Optional[str] = None  # Three-letter code
     founded: Optional[int] = None
-    area_name: Optional[str] = Field(None, alias="area")
+    area: Optional[Any] = None  # API returns nested object {"id", "name", "code", ...}
 
     class Config:
         populate_by_name = True
@@ -28,7 +28,7 @@ class CompetitionData(BaseModel):
     id: int
     name: str
     code: str
-    area_name: Optional[str] = Field(None, alias="area")
+    area: Optional[Any] = None  # API returns nested object {"id", "name", "code", ...}
 
     class Config:
         populate_by_name = True
@@ -64,14 +64,14 @@ class MatchesResponse(BaseModel):
 
 
 class StandingsTableEntry(BaseModel):
-    """League table entry."""
+    """League table entry. API returns won/draw/lost; we map to wins/draws/losses."""
 
     position: int
     team: TeamData
     played_games: int = Field(alias="playedGames")
-    wins: int
-    draws: int
-    losses: int
+    wins: int = Field(alias="won")
+    draws: int = Field(alias="draw")
+    losses: int = Field(alias="lost")
     points: int
     goals_for: int = Field(alias="goalsFor")
     goals_against: int = Field(alias="goalsAgainst")
@@ -82,22 +82,12 @@ class StandingsTableEntry(BaseModel):
 
 
 class StandingsTable(BaseModel):
-    """League standings table."""
+    """League standings table. The API omits 'name'; type/stage/group identify it."""
 
     type: str
-    name: str
-    table: List[StandingsTableEntry]
-
-    class Config:
-        populate_by_name = True
-
-
-class StandingsData(BaseModel):
-    """Standings data with multiple tables (e.g., overall, home, away)."""
-
     stage: Optional[str] = None
     group: Optional[str] = None
-    standings: List[StandingsTable]
+    table: List[StandingsTableEntry]
 
     class Config:
         populate_by_name = True
@@ -109,7 +99,7 @@ class StandingsResponse(BaseModel):
     filters: Optional[dict] = None
     competition: CompetitionData
     season: Optional[dict] = None
-    standings: List[StandingsData]
+    standings: List[StandingsTable] = []
 
     class Config:
         populate_by_name = True

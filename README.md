@@ -383,23 +383,11 @@ footylens/
 
 ## Screenshots
 
-> Add screenshots to a `docs/screenshots/` directory and update the paths below.
-
-| Page | Screenshot |
-|---|---|
-| Standings | `docs/screenshots/standings.png` |
-| Matches | `docs/screenshots/matches.png` |
-| Analytics — xG chart | `docs/screenshots/analytics-xg.png` |
-| Analytics — Top scorers | `docs/screenshots/analytics-scorers.png` |
-| Django Admin | `docs/screenshots/admin.png` |
-
-To add screenshots:
-```bash
-mkdir -p docs/screenshots
-# Take screenshots and save them to docs/screenshots/
-# Then update the table above with the actual image paths:
-# ![Standings](docs/screenshots/standings.png)
-```
+![Standings](docs/screenshots/standings.png)
+![Matches](docs/screenshots/matches.png)
+![Analytics xG](docs/screenshots/analytics-xg.png)
+![Analytics Top Scorers](docs/screenshots/analytics-scorers.png)
+![Django Admin](docs/screenshots/admin.png)
 
 ---
 

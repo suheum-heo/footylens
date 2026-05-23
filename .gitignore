@@ -13,5 +13,10 @@ __pycache__/
 db.sqlite3
 staticfiles/
 
+# Next.js
+services/nextjs/node_modules/
+services/nextjs/.next/
+services/nextjs/out/
+
 # OS
 .DS_Store

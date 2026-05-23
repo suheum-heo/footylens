@@ -1,0 +1,125 @@
+version: "3.9"
+
+# ── FootyLens services ────────────────────────────────────────────────────────
+#
+# Start everything:        docker compose up --build
+# Run migrations:          docker compose exec django python manage.py migrate
+# Sync data (PL):          docker compose exec django python manage.py sync_football_data --competition PL
+# Django superuser:        docker compose exec django python manage.py createsuperuser
+#
+# Ports:
+#   3000  → Next.js dashboard
+#   8000  → FastAPI analytics service
+#   8001  → Django REST API / Admin
+#   5432  → PostgreSQL (internal; not exposed by default)
+#   6379  → Redis (internal; not exposed by default)
+
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: footylens_db
+      POSTGRES_USER: footylens
+      POSTGRES_PASSWORD: footylens
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U footylens -d footylens_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Application services ──────────────────────────────────────────────────
+
+  fastapi:
+    build:
+      context: ./services/fastapi
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY}
+      FOOTBALL_DATA_BASE_URL: https://api.football-data.org/v4
+      FASTAPI_DEBUG: "false"
+      FASTAPI_HOST: "0.0.0.0"
+      FASTAPI_PORT: "8000"
+      RATE_LIMIT_REQUESTS: "10"
+      RATE_LIMIT_PERIOD_SECONDS: "60"
+      # Shared vars — FastAPI settings ignores unknown keys via extra="ignore"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-changeme}
+      DATABASE_URL: postgres://footylens:footylens@postgres:5432/footylens_db
+      REDIS_URL: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: on-failure
+
+  django:
+    build:
+      context: ./services/django
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-changeme-insecure-dev-key}
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,django
+      DATABASE_URL: postgres://footylens:footylens@postgres:5432/footylens_db
+      REDIS_URL: redis://redis:6379/1
+      FOOTBALL_DATA_API_KEY: ${FOOTBALL_DATA_API_KEY}
+      FOOTBALL_DATA_BASE_URL: https://api.football-data.org/v4
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8001/admin/login/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: on-failure
+
+  nextjs:
+    build:
+      context: ./services/nextjs
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      # Server-side only — Next.js server components use this to reach FastAPI
+      FASTAPI_URL: http://fastapi:8000
+    depends_on:
+      fastapi:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: on-failure
+
+volumes:
+  postgres_data:
